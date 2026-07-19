@@ -31,6 +31,8 @@ by Codex surface; App Server events are the exact integration path.
 
 - Codex local client (desktop app, CLI, or IDE integration)
 - Python 3.9+
+- [uv 0.11.16+](https://docs.astral.sh/uv/getting-started/installation/)
+  (recommended, optional)
 - A Telegram bot and chat ID
 
 ## 1. Create a Telegram bot
@@ -52,15 +54,22 @@ Telegram bot tokens grant full control of the bot. Never commit or share one.
 
 ## 2. Install the notifier
 
-Clone the repository and install it in an isolated virtual environment:
+Clone the repository, then use `uv` to create and synchronize the isolated
+environment from the committed lockfile:
 
 ```bash
 git clone https://github.com/Kentaczi/tele-codex.git
 cd tele-codex
-python3 -m venv .venv
-.venv/bin/python -m pip install .
+uv sync --locked
 cp telegram.example.json ~/.codex/telegram.json
 chmod 600 ~/.codex/telegram.json
+```
+
+If you do not use `uv`, the standard Python workflow remains supported:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install .
 ```
 
 Edit `~/.codex/telegram.json` and insert your bot token and chat ID. You can
@@ -69,8 +78,11 @@ instead provide `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the environment.
 Test the connection:
 
 ```bash
-.venv/bin/tele-codex --test
+uv run --locked tele-codex --test
 ```
+
+You can equivalently run `.venv/bin/tele-codex --test` after either installation
+method.
 
 This command returns a non-zero status if credentials, networking, or the
 Telegram API are not working. `TELEGRAM_HTTP_TIMEOUT` can override the default
@@ -116,7 +128,7 @@ local clients. A completed final response is also classified heuristically as
 Then launch CLI sessions with:
 
 ```bash
-.venv/bin/tele-codex-watch
+uv run --locked tele-codex-watch
 ```
 
 The wrapper sends a red notification if the Codex process returns a non-zero
@@ -137,7 +149,7 @@ object per line, then pipe that stream into:
 
 ```bash
 your-app-server-event-tap | \
-  .venv/bin/tele-codex-app-server --stall-seconds 900
+  uv run --locked tele-codex-app-server --stall-seconds 900
 ```
 
 Use `--dry-run` to print notifications during integration testing and
@@ -152,11 +164,15 @@ the duplicate when evaluating the watcher.
 ## Test locally
 
 ```bash
-python3 -m unittest discover -s tests -v
-python3 -m compileall -q tele_codex tests *.py
-.venv/bin/tele-codex --dry-run \
+uv lock --check
+uv run --frozen python -m unittest discover -s tests -v
+uv run --frozen python -m compileall -q tele_codex tests *.py
+uv run --frozen tele-codex --dry-run \
   '{"type":"agent-turn-complete","cwd":"/tmp/demo","last-assistant-message":"All checks passed."}'
 ```
+
+The same commands can be run with `.venv/bin/python` and the `.venv/bin/tele-*`
+entry points when using the standard `venv`/`pip` setup.
 
 ## Project structure
 
@@ -170,7 +186,8 @@ Core behavior lives in the `tele_codex` package:
 - `app_server.py` tracks exact App Server lifecycle events.
 
 The three top-level Python scripts are thin compatibility entry points. Tests
-live under `tests/`, while `pyproject.toml` defines the installable commands.
+live under `tests/`, `pyproject.toml` defines the installable commands and uv
+settings, and `uv.lock` provides reproducible project synchronization.
 
 ## References
 
@@ -179,6 +196,7 @@ live under `tests/`, while `pyproject.toml` defines the installable commands.
 - [Codex App Server events](https://developers.openai.com/codex/app-server#events)
 - [Telegram bot tutorial](https://core.telegram.org/bots/tutorial)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
+- [uv project management](https://docs.astral.sh/uv/guides/projects/)
 
 ## License
 
