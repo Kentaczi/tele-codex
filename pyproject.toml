@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tele-codex"
+version = "0.1.0"
+description = "Telegram notifications for local Codex sessions"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "tele-codex contributors" }]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = []
+
+[project.scripts]
+tele-codex = "tele_codex.notifier:cli"
+tele-codex-watch = "tele_codex.codex_runner:cli"
+tele-codex-app-server = "tele_codex.app_server:cli"
+
+[project.urls]
+Repository = "https://github.com/Kentaczi/tele-codex"
+Issues = "https://github.com/Kentaczi/tele-codex/issues"
+
+[tool.setuptools.packages.find]
+include = ["tele_codex*"]

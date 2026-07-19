@@ -8,15 +8,10 @@ from unittest.mock import patch
 from urllib.error import URLError
 from urllib.parse import parse_qs
 
-from telegram_notify import (
-    MAX_TELEGRAM_TEXT,
-    TelegramError,
-    build_message,
-    cli,
-    load_config,
-    looks_like_question,
-    send_telegram,
-)
+from tele_codex.config import TelegramConfig, load_config
+from tele_codex.messages import build_message, looks_like_question
+from tele_codex.notifier import cli
+from tele_codex.telegram import MAX_TELEGRAM_TEXT, TelegramError, send_telegram
 
 
 class FakeResponse:
@@ -51,9 +46,7 @@ class ConfigTests(unittest.TestCase):
             {"TELEGRAM_BOT_TOKEN": "token", "TELEGRAM_CHAT_ID": "42"},
             clear=True,
         ):
-            self.assertEqual(
-                load_config(), {"bot_token": "token", "chat_id": "42"}
-            )
+            self.assertEqual(load_config(), TelegramConfig("token", "42"))
 
     def test_partial_environment_credentials_fail(self):
         with patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "token"}, clear=True):
@@ -72,7 +65,7 @@ class ConfigTests(unittest.TestCase):
 class TelegramTransportTests(unittest.TestCase):
     CONFIG = {"bot_token": "secret-token", "chat_id": "123"}
 
-    @patch("telegram_notify.urlopen")
+    @patch("tele_codex.telegram.urlopen")
     def test_encodes_send_message_request(self, mocked_urlopen):
         mocked_urlopen.return_value = FakeResponse(b'{"ok": true, "result": {}}')
 
@@ -87,7 +80,7 @@ class TelegramTransportTests(unittest.TestCase):
         self.assertEqual(body["text"], ["hello & goodbye"])
         self.assertEqual(timeout, 3)
 
-    @patch("telegram_notify.urlopen")
+    @patch("tele_codex.telegram.urlopen")
     def test_rejected_api_response_fails(self, mocked_urlopen):
         mocked_urlopen.return_value = FakeResponse(
             b'{"ok": false, "description": "chat not found"}'
@@ -95,19 +88,19 @@ class TelegramTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(TelegramError, "chat not found"):
             send_telegram("hello", self.CONFIG)
 
-    @patch("telegram_notify.urlopen")
+    @patch("tele_codex.telegram.urlopen")
     def test_invalid_json_fails(self, mocked_urlopen):
         mocked_urlopen.return_value = FakeResponse(b"not-json")
         with self.assertRaisesRegex(TelegramError, "invalid JSON"):
             send_telegram("hello", self.CONFIG)
 
-    @patch("telegram_notify.urlopen", side_effect=URLError("offline"))
+    @patch("tele_codex.telegram.urlopen", side_effect=URLError("offline"))
     def test_network_error_is_sanitized(self, _mocked_urlopen):
         with self.assertRaisesRegex(TelegramError, "offline") as raised:
             send_telegram("hello", self.CONFIG)
         self.assertNotIn("secret-token", str(raised.exception))
 
-    @patch("telegram_notify.urlopen", side_effect=TimeoutError())
+    @patch("tele_codex.telegram.urlopen", side_effect=TimeoutError())
     def test_timeout_has_actionable_error(self, _mocked_urlopen):
         with self.assertRaisesRegex(TelegramError, "timed out"):
             send_telegram("hello", self.CONFIG)
@@ -182,9 +175,9 @@ class MessageTests(unittest.TestCase):
 
 
 class ExitBehaviorTests(unittest.TestCase):
-    @patch("telegram_notify.send_telegram", side_effect=TelegramError("offline"))
+    @patch("tele_codex.notifier.send_telegram", side_effect=TelegramError("offline"))
     def test_manual_test_failure_returns_nonzero(self, _mocked_send):
-        with patch("telegram_notify.load_config", return_value={}):
+        with patch("tele_codex.notifier.load_config", return_value={}):
             with patch("sys.stderr", new=io.StringIO()):
                 self.assertEqual(cli(["--test"]), 1)
 

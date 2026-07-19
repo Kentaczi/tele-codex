@@ -52,10 +52,13 @@ Telegram bot tokens grant full control of the bot. Never commit or share one.
 
 ## 2. Install the notifier
 
-From this repository:
+Clone the repository and install it in an isolated virtual environment:
 
 ```bash
-install -m 700 telegram_notify.py ~/.codex/telegram_notify.py
+git clone https://github.com/Kentaczi/tele-codex.git
+cd tele-codex
+python3 -m venv .venv
+.venv/bin/python -m pip install .
 cp telegram.example.json ~/.codex/telegram.json
 chmod 600 ~/.codex/telegram.json
 ```
@@ -66,7 +69,7 @@ instead provide `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the environment.
 Test the connection:
 
 ```bash
-/usr/bin/python3 ~/.codex/telegram_notify.py --test
+.venv/bin/tele-codex --test
 ```
 
 This command returns a non-zero status if credentials, networking, or the
@@ -79,8 +82,7 @@ Add the following to the user-level `~/.codex/config.toml`:
 
 ```toml
 notify = [
-  "/usr/bin/python3",
-  "/Users/YOU/.codex/telegram_notify.py"
+  "/ABSOLUTE/PATH/TO/tele-codex/.venv/bin/tele-codex"
 ]
 
 [[hooks.PermissionRequest]]
@@ -88,7 +90,7 @@ matcher = ".*"
 
 [[hooks.PermissionRequest.hooks]]
 type = "command"
-command = '/usr/bin/python3 "/Users/YOU/.codex/telegram_notify.py"'
+command = '"/ABSOLUTE/PATH/TO/tele-codex/.venv/bin/tele-codex"'
 timeout = 20
 
 [[hooks.PreToolUse]]
@@ -96,13 +98,13 @@ matcher = "^request_user_input$"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
-command = '/usr/bin/python3 "/Users/YOU/.codex/telegram_notify.py"'
+command = '"/ABSOLUTE/PATH/TO/tele-codex/.venv/bin/tele-codex"'
 timeout = 20
 ```
 
-Replace `/Users/YOU` with your home directory, restart Codex, and approve the
-hook trust prompt if one appears. The `notify` setting must be user-level;
-Codex ignores it in project `.codex/config.toml` files.
+Replace `/ABSOLUTE/PATH/TO` with the checkout's absolute parent path, restart
+Codex, and approve the hook trust prompt if one appears. The `notify` setting
+must be user-level; Codex ignores it in project `.codex/config.toml` files.
 
 The `PermissionRequest` hook is part of Codex's documented lifecycle hook
 contract. The `request_user_input` matcher is a convenient best-effort path for
@@ -111,16 +113,10 @@ local clients. A completed final response is also classified heuristically as
 
 ## Optional: abnormal CLI exit notifications
 
-Install the wrapper beside the notifier:
-
-```bash
-install -m 700 codex_watch.py ~/.codex/codex_watch.py
-```
-
 Then launch CLI sessions with:
 
 ```bash
-/usr/bin/python3 ~/.codex/codex_watch.py
+.venv/bin/tele-codex-watch
 ```
 
 The wrapper sends a red notification if the Codex process returns a non-zero
@@ -136,18 +132,12 @@ It recognizes exact input requests, approval requests, and
 `turn/completed` statuses (`completed`, `interrupted`, or `failed`). While a
 turn is active, it can report prolonged inactivity once per quiet period.
 
-Install it beside the notifier:
-
-```bash
-install -m 700 app_server_watch.py ~/.codex/app_server_watch.py
-```
-
 Have your App Server client mirror each received JSON-RPC message as one JSON
 object per line, then pipe that stream into:
 
 ```bash
 your-app-server-event-tap | \
-  /usr/bin/python3 ~/.codex/app_server_watch.py --stall-seconds 900
+  .venv/bin/tele-codex-app-server --stall-seconds 900
 ```
 
 Use `--dry-run` to print notifications during integration testing and
@@ -162,11 +152,25 @@ the duplicate when evaluating the watcher.
 ## Test locally
 
 ```bash
-python3 -m unittest -v
-python3 -m compileall -q .
-python3 telegram_notify.py --dry-run \
+python3 -m unittest discover -s tests -v
+python3 -m compileall -q tele_codex tests *.py
+.venv/bin/tele-codex --dry-run \
   '{"type":"agent-turn-complete","cwd":"/tmp/demo","last-assistant-message":"All checks passed."}'
 ```
+
+## Project structure
+
+Core behavior lives in the `tele_codex` package:
+
+- `config.py` loads and validates credentials and runtime settings;
+- `telegram.py` contains the Telegram transport;
+- `messages.py` translates Codex callbacks into notification text;
+- `notifier.py` handles completion and hook callbacks;
+- `codex_runner.py` supervises Codex CLI exits; and
+- `app_server.py` tracks exact App Server lifecycle events.
+
+The three top-level Python scripts are thin compatibility entry points. Tests
+live under `tests/`, while `pyproject.toml` defines the installable commands.
 
 ## References
 

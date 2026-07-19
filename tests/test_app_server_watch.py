@@ -1,6 +1,6 @@
 import unittest
 
-from app_server_watch import StateTracker
+from tele_codex.app_server import StateTracker
 
 
 class StateTrackerTests(unittest.TestCase):
@@ -106,4 +106,3 @@ class StateTrackerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
