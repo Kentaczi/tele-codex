@@ -9,11 +9,17 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 DEFAULT_CONFIG = Path.home() / ".codex" / "telegram.json"
 MAX_TELEGRAM_TEXT = 4000
+DEFAULT_HTTP_TIMEOUT = 5.0
+
+
+class TelegramError(RuntimeError):
+    """A Telegram request completed without a usable success response."""
 
 
 def load_config(path: Path | None = None) -> dict[str, str]:
@@ -21,6 +27,10 @@ def load_config(path: Path | None = None) -> dict[str, str]:
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
 
+    if bool(token) != bool(chat_id):
+        raise ValueError(
+            "Set both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID, or unset both"
+        )
     if token and chat_id:
         return {"bot_token": token, "chat_id": chat_id}
 
@@ -39,8 +49,24 @@ def load_config(path: Path | None = None) -> dict[str, str]:
     }
 
 
-def send_telegram(text: str, config: dict[str, str]) -> None:
+def http_timeout() -> float:
+    """Return a positive request timeout, leaving margin for the hook runner."""
+    value = float(os.environ.get("TELEGRAM_HTTP_TIMEOUT", DEFAULT_HTTP_TIMEOUT))
+    if value <= 0:
+        raise ValueError("TELEGRAM_HTTP_TIMEOUT must be greater than zero")
+    return value
+
+
+def send_telegram(
+    text: str,
+    config: dict[str, str],
+    *,
+    timeout: float | None = None,
+) -> None:
     """Call Telegram's sendMessage Bot API method."""
+    selected_timeout = http_timeout() if timeout is None else timeout
+    if selected_timeout <= 0:
+        raise ValueError("Telegram request timeout must be greater than zero")
     body = urlencode(
         {
             "chat_id": config["chat_id"],
@@ -54,8 +80,29 @@ def send_telegram(text: str, config: dict[str, str]) -> None:
         data=body,
         method="POST",
     )
-    with urlopen(request, timeout=15) as response:
-        response.read()
+    try:
+        with urlopen(request, timeout=selected_timeout) as response:
+            raw_response = response.read()
+    except HTTPError as error:
+        raise TelegramError(f"Telegram returned HTTP {error.code}") from error
+    except URLError as error:
+        reason = getattr(error, "reason", "network error")
+        raise TelegramError(f"Telegram connection failed: {reason}") from error
+    except TimeoutError as error:
+        raise TelegramError("Telegram connection timed out") from error
+
+    try:
+        result = json.loads(raw_response.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise TelegramError("Telegram returned invalid JSON") from error
+
+    if not isinstance(result, dict) or result.get("ok") is not True:
+        description = (
+            str(result.get("description") or "unknown API error")
+            if isinstance(result, dict)
+            else "unexpected API response"
+        )
+        raise TelegramError(f"Telegram rejected the message: {description}")
 
 
 def looks_like_question(text: str) -> bool:
@@ -185,10 +232,24 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":
+def is_diagnostic_invocation(argv: list[str]) -> bool:
+    """Return whether errors should be visible through a non-zero exit code."""
+    return any(
+        argument in {"--test", "--dry-run", "--process-exit"}
+        or argument.startswith("--process-exit=")
+        for argument in argv
+    )
+
+
+def cli(argv: list[str] | None = None) -> int:
+    """Run the CLI, failing open only for callbacks invoked by Codex."""
+    selected = list(sys.argv[1:] if argv is None else argv)
     try:
-        raise SystemExit(main())
+        return main(selected)
     except Exception as error:  # Notifications must never stop a Codex turn.
         print(f"tele-codex notification failed: {error}", file=sys.stderr)
-        raise SystemExit(0)
+        return 1 if is_diagnostic_invocation(selected) else 0
 
+
+if __name__ == "__main__":
+    raise SystemExit(cli())

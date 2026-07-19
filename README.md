@@ -11,6 +11,10 @@ It can notify you when:
 - Codex opens an explicit user-input prompt; or
 - a Codex CLI process launched through the optional wrapper exits abnormally.
 
+For clients that expose the Codex App Server event stream, the optional watcher
+also reports exact completed, interrupted, failed, input-request, and approval
+events, with configurable inactivity alerts.
+
 ## How it works
 
 Codex's user-level `notify` command receives `agent-turn-complete` events as a
@@ -19,8 +23,9 @@ translates those payloads into Telegram Bot API `sendMessage` requests.
 
 The finished-versus-needs-response distinction is necessarily heuristic because
 the external `notify` event currently reports turn completion, not a separate
-"needs input" status. Explicit input prompts and approval requests are handled
-directly by hooks.
+"needs input" status. Approval requests are handled directly by hooks. The
+`request_user_input` hook is best-effort because specialized tool paths can vary
+by Codex surface; App Server events are the exact integration path.
 
 ## Requirements
 
@@ -64,6 +69,10 @@ Test the connection:
 /usr/bin/python3 ~/.codex/telegram_notify.py --test
 ```
 
+This command returns a non-zero status if credentials, networking, or the
+Telegram API are not working. `TELEGRAM_HTTP_TIMEOUT` can override the default
+five-second request deadline.
+
 ## 3. Configure Codex
 
 Add the following to the user-level `~/.codex/config.toml`:
@@ -80,7 +89,7 @@ matcher = ".*"
 [[hooks.PermissionRequest.hooks]]
 type = "command"
 command = '/usr/bin/python3 "/Users/YOU/.codex/telegram_notify.py"'
-timeout = 15
+timeout = 20
 
 [[hooks.PreToolUse]]
 matcher = "^request_user_input$"
@@ -88,12 +97,17 @@ matcher = "^request_user_input$"
 [[hooks.PreToolUse.hooks]]
 type = "command"
 command = '/usr/bin/python3 "/Users/YOU/.codex/telegram_notify.py"'
-timeout = 15
+timeout = 20
 ```
 
 Replace `/Users/YOU` with your home directory, restart Codex, and approve the
 hook trust prompt if one appears. The `notify` setting must be user-level;
 Codex ignores it in project `.codex/config.toml` files.
+
+The `PermissionRequest` hook is part of Codex's documented lifecycle hook
+contract. The `request_user_input` matcher is a convenient best-effort path for
+local clients. A completed final response is also classified heuristically as
+"needs your response" when it ends with a question or an input-related phrase.
 
 ## Optional: abnormal CLI exit notifications
 
@@ -115,10 +129,41 @@ A genuine freeze cannot trigger an in-process hook; reliable hang detection
 requires an independent supervisor or an App Server client with a carefully
 chosen inactivity policy.
 
+## Optional: exact App Server state watcher
+
+`app_server_watch.py` consumes a mirrored Codex App Server JSONL event stream.
+It recognizes exact input requests, approval requests, and
+`turn/completed` statuses (`completed`, `interrupted`, or `failed`). While a
+turn is active, it can report prolonged inactivity once per quiet period.
+
+Install it beside the notifier:
+
+```bash
+install -m 700 app_server_watch.py ~/.codex/app_server_watch.py
+```
+
+Have your App Server client mirror each received JSON-RPC message as one JSON
+object per line, then pipe that stream into:
+
+```bash
+your-app-server-event-tap | \
+  /usr/bin/python3 ~/.codex/app_server_watch.py --stall-seconds 900
+```
+
+Use `--dry-run` to print notifications during integration testing and
+`--stall-seconds 0` to disable inactivity alerts. The watcher is an event-stream
+consumer; it does not attach to an already-running desktop or CLI session and
+does not declare that inactivity proves a hang.
+
+If the same session also uses the basic `notify` command, both integrations can
+report turn completion. Disable one completion path in your event tap or accept
+the duplicate when evaluating the watcher.
+
 ## Test locally
 
 ```bash
 python3 -m unittest -v
+python3 -m compileall -q .
 python3 telegram_notify.py --dry-run \
   '{"type":"agent-turn-complete","cwd":"/tmp/demo","last-assistant-message":"All checks passed."}'
 ```

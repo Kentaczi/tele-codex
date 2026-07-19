@@ -13,7 +13,7 @@ matcher = ".*"
 [[hooks.PermissionRequest.hooks]]
 type = "command"
 command = '/usr/bin/python3 "/ABSOLUTE/PATH/TO/telegram_notify.py"'
-timeout = 15
+timeout = 20
 
 [[hooks.PreToolUse]]
 matcher = "^request_user_input$"
@@ -21,5 +21,4 @@ matcher = "^request_user_input$"
 [[hooks.PreToolUse.hooks]]
 type = "command"
 command = '/usr/bin/python3 "/ABSOLUTE/PATH/TO/telegram_notify.py"'
-timeout = 15
-
+timeout = 20
