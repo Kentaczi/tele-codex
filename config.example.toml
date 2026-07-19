@@ -1,0 +1,25 @@
+# Add these entries to the user-level ~/.codex/config.toml.
+# Replace /ABSOLUTE/PATH/TO with the directory containing telegram_notify.py.
+# Codex ignores `notify` in project-level .codex/config.toml files.
+
+notify = [
+  "/usr/bin/python3",
+  "/ABSOLUTE/PATH/TO/telegram_notify.py"
+]
+
+[[hooks.PermissionRequest]]
+matcher = ".*"
+
+[[hooks.PermissionRequest.hooks]]
+type = "command"
+command = '/usr/bin/python3 "/ABSOLUTE/PATH/TO/telegram_notify.py"'
+timeout = 15
+
+[[hooks.PreToolUse]]
+matcher = "^request_user_input$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '/usr/bin/python3 "/ABSOLUTE/PATH/TO/telegram_notify.py"'
+timeout = 15
+
